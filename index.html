@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Notion Market Dashboard</title>
+
+<!-- FAVICON & APP ICON -->
+<link rel="icon" type="image/png" sizes="32x32" href="icon.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icon.png">
+<link rel="apple-touch-icon" sizes="152x152" href="icon.png">
+<link rel="apple-touch-icon" sizes="120x120" href="icon.png">
+
+<!-- PWA / Mobile App Meta -->
+<meta name="theme-color" content="#0f1117">
+<meta name="msapplication-TileColor" content="#0f1117">
+<meta name="msapplication-TileImage" content="icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NM Dashboard">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="application-name" content="Notion Market">
+
+<!-- Open Graph (share preview) -->
+<meta property="og:image" content="icon.png">
+<meta property="og:title" content="Notion Market Dashboard">
+
+<!-- Web App Manifest (inline) -->
+<link rel="manifest" href='data:application/manifest+json,{"name":"Notion Market Dashboard","short_name":"NM Dashboard","start_url":".","display":"standalone","background_color":"#0f1117","theme_color":"#0f1117","icons":[{"src":"icon.png","sizes":"192x192","type":"image/png"},{"src":"icon.png","sizes":"512x512","type":"image/png"}]}'>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242836;
+    --border: #2e3345;
+    --text: #e4e6f0;
+    --text2: #8b8fa7;
+    --accent: #6c5ce7;
+    --accent2: #a29bfe;
+    --green: #00cec9;
+    --green-bg: rgba(0,206,201,.12);
+    --orange: #fdcb6e;
+    --orange-bg: rgba(253,203,110,.12);
+    --pink: #fd79a8;
+    --pink-bg: rgba(253,121,168,.12);
+    --blue: #74b9ff;
+    --blue-bg: rgba(116,185,255,.12);
+    --red: #ff7675;
+    --radius: 14px;
+    --shadow: 0 4px 24px rgba(0,0,0,.3);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* NAVBAR */
+  .navbar {
+    position: sticky; top:0; z-index:100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 24px;
+    background: rgba(26,29,39,.92);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-brand {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .nav-brand img {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    object-fit: contain;
+    background: var(--surface2);
+    padding: 2px;
+  }
+  .navbar h1 {
+    font-size: 1.15rem; font-weight: 700;
+    background: linear-gradient(135deg, var(--accent2), var(--green));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .navbar h1 span { font-weight: 400; opacity:.7; -webkit-text-fill-color: var(--text2); }
+  .nav-actions { display:flex; gap:10px; align-items:center; }
+  .btn {
+    padding: 8px 16px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text); cursor: pointer;
+    font-size: .85rem; transition: all .2s; display:flex; align-items:center; gap:6px;
+  }
+  .btn:hover { border-color: var(--accent); background: rgba(108,92,231,.15); }
+  .btn-accent { background: var(--accent); border-color: var(--accent); color:#fff; }
+  .btn-accent:hover { background: #5b4bd5; }
+
+  /* FILTERS */
+  .filters {
+    display: flex; gap: 10px; padding: 16px 24px; flex-wrap: wrap; align-items: center;
+  }
+  .filter-group { display:flex; align-items:center; gap:6px; }
+  .filter-group label { font-size:.8rem; color:var(--text2); }
+  select {
+    padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font-size: .85rem;
+    cursor: pointer; outline: none;
+  }
+  select:focus { border-color: var(--accent); }
+
+  /* MAIN */
+  .main { padding: 0 24px 40px; max-width: 1400px; margin: 0 auto; }
+
+  /* EMPTY STATE */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 60vh; text-align: center; gap: 16px;
+  }
+  .empty-state .icon-img {
+    width: 120px; height: 120px;
+    opacity: .85;
+    animation: float 3s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%,100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  .empty-state h2 { color: var(--text2); font-weight: 500; }
+  .empty-state p { color: var(--text2); font-size:.9rem; max-width:400px; }
+
+  /* KPI CARDS */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px; margin-bottom: 20px;
+  }
+  .kpi {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px;
+    transition: transform .2s, box-shadow .2s;
+  }
+  .kpi:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+  .kpi-label { font-size:.78rem; color:var(--text2); margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px; }
+  .kpi-value { font-size:1.8rem; font-weight:700; }
+  .kpi-sub { font-size:.78rem; color:var(--text2); margin-top:4px; }
+  .kpi.green .kpi-value { color: var(--green); }
+  .kpi.orange .kpi-value { color: var(--orange); }
+  .kpi.pink .kpi-value { color: var(--pink); }
+  .kpi.blue .kpi-value { color: var(--blue); }
+  .kpi.accent .kpi-value { color: var(--accent2); }
+
+  /* CHART GRID */
+  .chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 14px; margin-bottom: 20px;
+  }
+  .chart-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px;
+  }
+  .chart-card h3 {
+    font-size: .9rem; font-weight: 600; margin-bottom: 14px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .chart-card h3 .dot {
+    width:8px; height:8px; border-radius:50%; display:inline-block;
+  }
+  .chart-wrap { position: relative; width:100%; }
+  .chart-wrap canvas { width:100%!important; }
+
+  /* TABLE */
+  .table-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .table-card h3 { padding: 18px 20px 0; font-size:.9rem; }
+  .table-wrap { overflow-x: auto; }
+  table { width:100%; border-collapse:collapse; font-size:.82rem; }
+  th {
+    text-align:left; padding:12px 16px; color:var(--text2);
+    border-bottom:1px solid var(--border); font-weight:600;
+    text-transform:uppercase; font-size:.72rem; letter-spacing:.5px;
+    position:sticky; top:0; background:var(--surface);
+  }
+  td { padding:10px 16px; border-bottom:1px solid var(--border); }
+  tr:hover td { background: rgba(108,92,231,.05); }
+  .badge {
+    display:inline-block; padding:3px 10px; border-radius:20px;
+    font-size:.72rem; font-weight:600;
+  }
+  .badge-free { background:var(--green-bg); color:var(--green); }
+  .badge-paid { background:var(--orange-bg); color:var(--orange); }
+
+  /* SETTINGS OVERLAY */
+  .overlay {
+    position:fixed; inset:0; background:rgba(0,0,0,.6);
+    z-index:200; display:none; align-items:center; justify-content:center;
+    backdrop-filter:blur(4px);
+  }
+  .overlay.open { display:flex; }
+  .modal {
+    background: var(--surface); border:1px solid var(--border);
+    border-radius: 18px; padding: 32px; width: 90%; max-width: 520px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    animation: slideUp .3s ease;
+  }
+  @keyframes slideUp { from { transform:translateY(30px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+  .modal h2 { margin-bottom:6px; font-size:1.2rem; display:flex; align-items:center; gap:10px; }
+  .modal h2 img { width:28px; height:28px; border-radius:6px; }
+  .modal p { color:var(--text2); font-size:.85rem; margin-bottom:20px; line-height:1.5; }
+  .upload-zone {
+    border: 2px dashed var(--border); border-radius: 14px;
+    padding: 40px 20px; text-align: center; cursor: pointer;
+    transition: all .2s; margin-bottom: 16px;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent); background: rgba(108,92,231,.08);
+  }
+  .upload-zone .icon { font-size:2.5rem; margin-bottom:8px; }
+  .upload-zone .label { color:var(--text2); font-size:.85rem; }
+  .upload-zone .label strong { color:var(--accent2); }
+  .file-info {
+    background: var(--surface2); border-radius:10px; padding:12px 16px;
+    display:none; align-items:center; gap:10px; margin-bottom:16px;
+    font-size:.85rem;
+  }
+  .file-info.show { display:flex; }
+  .file-info .name { flex:1; color:var(--green); font-weight:600; }
+  .file-info .remove { color:var(--red); cursor:pointer; font-size:1.1rem; }
+  .modal-actions { display:flex; gap:10px; justify-content:flex-end; }
+  .format-hint {
+    background: var(--surface2); border-radius:10px; padding:14px 16px;
+    font-size:.78rem; color:var(--text2); line-height:1.6; margin-bottom:16px;
+  }
+  .format-hint code {
+    background:var(--bg); padding:2px 6px; border-radius:4px;
+    color:var(--accent2); font-size:.75rem;
+  }
+
+  /* RESPONSIVE */
+  @media (max-width: 768px) {
+    .navbar { padding: 10px 16px; }
+    .navbar h1 { font-size: 1rem; }
+    .nav-brand img { width: 30px; height: 30px; }
+    .filters { padding: 12px 16px; }
+    .main { padding: 0 16px 30px; }
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); gap:10px; }
+    .kpi { padding: 14px; }
+    .kpi-value { font-size: 1.4rem; }
+    .chart-grid { grid-template-columns: 1fr; }
+    .chart-card { padding: 14px; }
+    .btn span.hide-mobile { display:none; }
+  }
+  @media (max-width: 420px) {
+    .kpi-grid { grid-template-columns: 1fr; }
+    .navbar h1 span { display:none; }
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width:6px; height:6px; }
+  ::-webkit-scrollbar-track { background:var(--bg); }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+</style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav class="navbar">
+  <div class="nav-brand">
+    <img src="icon.png" alt="App Icon">
+    <h1>Notion Market <span>Dashboard</span></h1>
+  </div>
+  <div class="nav-actions">
+    <button class="btn" onclick="openSettings()">⚙️ <span class="hide-mobile">Settings</span></button>
+    <button class="btn" onclick="exportLeadGenCSV()" style="background: var(--green); color: #0f1117; border-color: var(--green); font-weight: 600;">
+      📥 <span class="hide-mobile">Export Lead CSV</span>
+    </button>
+  </div>
+</nav>
+
+<!-- FILTERS -->
+<div class="filters" id="filtersBar" style="display:none;">
+  <div class="filter-group">
+    <label>Year</label>
+    <select id="filterYear" onchange="applyFilters()"><option value="all">All Years</option></select>
+  </div>
+  <div class="filter-group">
+    <label>Month</label>
+    <select id="filterMonth" onchange="applyFilters()">
+      <option value="all">All Months</option>
+      <option value="0">January</option><option value="1">February</option>
+      <option value="2">March</option><option value="3">April</option>
+      <option value="4">May</option><option value="5">June</option>
+      <option value="6">July</option><option value="7">August</option>
+      <option value="8">September</option><option value="9">October</option>
+      <option value="10">November</option><option value="11">December</option>
+    </select>
+  </div>
+  <div class="filter-group">
+    <label>Type</label>
+    <select id="filterType" onchange="applyFilters()">
+      <option value="all">All Products</option>
+      <option value="free">Free Only</option>
+      <option value="paid">Paid Only</option>
+    </select>
+  </div>
+  <button class="btn" onclick="resetFilters()">↺ Reset</button>
+</div>
+
+<!-- MAIN CONTENT -->
+<div class="main">
+  <!-- Empty State -->
+  <div class="empty-state" id="emptyState">
+    <img class="icon-img" src="icon.png" alt="App Icon">
+    <h2>No Data Loaded</h2>
+    <p>Upload your Notion Market CSV file via the Settings menu to get started.</p>
+    <button class="btn btn-accent" onclick="openSettings()">⚙️ Upload Data</button>
+  </div>
+
+  <!-- Dashboard (hidden until data loaded) -->
+  <div id="dashboard" style="display:none;">
+    <!-- KPIs -->
+    <div class="kpi-grid">
+      <div class="kpi accent">
+        <div class="kpi-label">Total Downloads</div>
+        <div class="kpi-value" id="kpiTotal">0</div>
+        <div class="kpi-sub" id="kpiTotalSub"></div>
+      </div>
+      <div class="kpi green">
+        <div class="kpi-label">Free Downloads</div>
+        <div class="kpi-value" id="kpiFree">0</div>
+        <div class="kpi-sub" id="kpiFreeSub"></div>
+      </div>
+      <div class="kpi orange">
+        <div class="kpi-label">Paid Downloads</div>
+        <div class="kpi-value" id="kpiPaid">0</div>
+        <div class="kpi-sub" id="kpiPaidSub"></div>
+      </div>
+      <div class="kpi pink">
+        <div class="kpi-label">Total Revenue</div>
+        <div class="kpi-value" id="kpiRevenue">$0</div>
+        <div class="kpi-sub" id="kpiRevenueSub"></div>
+      </div>
+      <div class="kpi blue">
+        <div class="kpi-label">Net Earnings</div>
+        <div class="kpi-value" id="kpiNet">$0</div>
+        <div class="kpi-sub" id="kpiNetSub"></div>
+      </div>
+    </div>
+
+    <!-- Charts Row 1 -->
+    <div class="chart-grid">
+      <div class="chart-card">
+        <h3><span class="dot" style="background:var(--green)"></span> Free vs Paid Downloads</h3>
+        <div class="chart-wrap"><canvas id="chartPie"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3><span class="dot" style="background:var(--accent2)"></span> Monthly Downloads Trend</h3>
+        <div class="chart-wrap"><canvas id="chartTrend"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Charts Row 2 -->
+    <div class="chart-grid">
+      <div class="chart-card">
+        <h3><span class="dot" style="background:var(--pink)"></span> Monthly Revenue</h3>
+        <div class="chart-wrap"><canvas id="chartRevenue"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3><span class="dot" style="background:var(--orange)"></span> Top Products by Downloads</h3>
+        <div class="chart-wrap"><canvas id="chartProducts"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Charts Row 3 -->
+    <div class="chart-grid">
+      <div class="chart-card">
+        <h3><span class="dot" style="background:var(--blue)"></span> Free vs Paid Monthly Breakdown</h3>
+        <div class="chart-wrap"><canvas id="chartStacked"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3><span class="dot" style="background:var(--green)"></span> Locale Distribution</h3>
+        <div class="chart-wrap"><canvas id="chartLocale"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Product Table -->
+    <div class="table-card">
+      <h3>📋 Product Breakdown</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Type</th>
+              <th>Downloads</th>
+              <th>Revenue</th>
+              <th>Net Earnings</th>
+            </tr>
+          </thead>
+          <tbody id="productTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="overlay" id="settingsOverlay" onclick="closeSettingsOutside(event)">
+  <div class="modal">
+    <h2><img src="icon.png" alt=""> Settings</h2>
+    <p>Upload your Notion Market CSV export to populate the dashboard.</p>
+    <div class="format-hint">
+      <strong>Expected CSV columns:</strong><br>
+      <code>Date</code>, <code>Listing price</code>, <code>Discounted price</code>,
+      <code>Tax amount</code>, <code>Total customer payment</code>,
+      <code>Seller transfer amount</code>, <code>Product name</code>,
+      <code>Product slug</code>, <code>Product Type</code>, <code>Locale</code>,
+      <code>Status</code>, <code>Customer email</code>, <code>Coupon code</code>
+    </div>
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+      <div class="icon">📤</div>
+      <div class="label">Drag & drop your CSV here or <strong>browse</strong></div>
+    </div>
+    <input type="file" id="fileInput" accept=".csv" style="display:none" onchange="handleFile(this.files[0])">
+    <div class="file-info" id="fileInfo">
+      <span>📄</span>
+      <span class="name" id="fileName"></span>
+      <span class="remove" onclick="removeFile()">✕</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeSettings()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ──
+let rawData = [];
+let filteredData = [];
+let charts = {};
+
+// ── SETTINGS ──
+function openSettings() { document.getElementById('settingsOverlay').classList.add('open'); }
+function closeSettings() { document.getElementById('settingsOverlay').classList.remove('open'); }
+function closeSettingsOutside(e) { if (e.target === e.currentTarget) closeSettings(); }
+
+// ── DRAG & DROP ──
+const zone = document.getElementById('uploadZone');
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+zone.addEventListener('drop', e => {
+  e.preventDefault(); zone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+
+// ── FILE HANDLING ──
+function handleFile(file) {
+  if (!file || !file.name.endsWith('.csv')) { alert('Please upload a .csv file'); return; }
+  document.getElementById('fileName').textContent = file.name;
+  document.getElementById('fileInfo').classList.add('show');
+
+  Papa.parse(file, {
+    header: true, skipEmptyLines: true,
+    complete: function(results) {
+      rawData = results.data.filter(r => r.Date && r['Product name']);
+      if (rawData.length === 0) { alert('No valid data found in CSV.'); return; }
+      populateFilters();
+      applyFilters();
+      closeSettings();
+    }
+  });
+}
+
+function removeFile() {
+  rawData = []; filteredData = [];
+  document.getElementById('fileInfo').classList.remove('show');
+  document.getElementById('fileInput').value = '';
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('emptyState').style.display = 'flex';
+  document.getElementById('filtersBar').style.display = 'none';
+  destroyCharts();
+}
+
+// ── PARSE HELPERS ──
+function parsePrice(str) {
+  if (!str) return 0;
+  return parseFloat(str.replace(/[$,]/g, '')) || 0;
+}
+
+function parseDate(str) {
+  if (!str) return new Date();
+  // Try native parsing first (handles YYYY-MM-DD and most standard formats)
+  let d = new Date(str);
+  if (!isNaN(d.getTime())) return d;
+  // Fallback to MM/DD/YYYY
+  const parts = str.split('/');
+  if (parts.length === 3) {
+    return new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
+  }
+  return new Date();
+}
+
+function isPaid(row) {
+  return parsePrice(row['Listing price']) > 0;
+}
+
+// ── FILTERS ──
+function populateFilters() {
+  const years = [...new Set(rawData.map(r => parseDate(r.Date).getFullYear()))].sort((a, b) => b - a);
+  const sel = document.getElementById('filterYear');
+  sel.innerHTML = '<option value="all">All Years</option>';
+  years.forEach(y => { const o = document.createElement('option'); o.value = y; o.textContent = y; sel.appendChild(o); });
+}
+
+function resetFilters() {
+  document.getElementById('filterYear').value = 'all';
+  document.getElementById('filterMonth').value = 'all';
+  document.getElementById('filterType').value = 'all';
+  applyFilters();
+}
+
+function applyFilters() {
+  const year = document.getElementById('filterYear').value;
+  const month = document.getElementById('filterMonth').value;
+  const type = document.getElementById('filterType').value;
+
+  filteredData = rawData.filter(r => {
+    const d = parseDate(r.Date);
+    if (year !== 'all' && d.getFullYear() !== parseInt(year)) return false;
+    if (month !== 'all' && d.getMonth() !== parseInt(month)) return false;
+    if (type === 'free' && isPaid(r)) return false;
+    if (type === 'paid' && !isPaid(r)) return false;
+    return true;
+  });
+
+  renderDashboard();
+}
+
+// ── RENDER ──
+function renderDashboard() {
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  document.getElementById('filtersBar').style.display = 'flex';
+
+  const freeData = filteredData.filter(r => !isPaid(r));
+  const paidData = filteredData.filter(r => isPaid(r));
+  const totalRevenue = paidData.reduce((s, r) => s + parsePrice(r['Total customer payment']), 0);
+  const totalNet = paidData.reduce((s, r) => s + parsePrice(r['Seller transfer amount']), 0);
+
+  document.getElementById('kpiTotal').textContent = filteredData.length.toLocaleString();
+  document.getElementById('kpiTotalSub').textContent = `${new Set(filteredData.map(r=>r['Product name'])).size} products`;
+  document.getElementById('kpiFree').textContent = freeData.length.toLocaleString();
+  document.getElementById('kpiFreeSub').textContent = `${filteredData.length ? ((freeData.length/filteredData.length)*100).toFixed(1) : 0}% of total`;
+  document.getElementById('kpiPaid').textContent = paidData.length.toLocaleString();
+  document.getElementById('kpiPaidSub').textContent = `${filteredData.length ? ((paidData.length/filteredData.length)*100).toFixed(1) : 0}% of total`;
+  document.getElementById('kpiRevenue').textContent = '$' + totalRevenue.toFixed(2);
+  document.getElementById('kpiRevenueSub').textContent = `${paidData.length} transactions`;
+  document.getElementById('kpiNet').textContent = '$' + totalNet.toFixed(2);
+  document.getElementById('kpiNetSub').textContent = `After fees & tax`;
+
+  renderCharts(freeData, paidData);
+  renderTable();
+}
+
+// ── CHARTS ──
+function destroyCharts() {
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {};
+}
+
+const chartColors = {
+  green: '#00cec9', greenBg: 'rgba(0,206,201,.2)',
+  orange: '#fdcb6e', orangeBg: 'rgba(253,203,110,.2)',
+  accent: '#a29bfe', accentBg: 'rgba(162,155,254,.2)',
+  pink: '#fd79a8', pinkBg: 'rgba(253,121,168,.2)',
+  blue: '#74b9ff', blueBg: 'rgba(116,185,255,.2)',
+  red: '#ff7675',
+};
+
+const defaultOptions = {
+  responsive: true,
+  maintainAspectRatio: true,
+  plugins: {
+    legend: { labels: { color: '#8b8fa7', font: { size: 11 }, padding: 14, usePointStyle: true, pointStyleWidth: 8 } },
+    tooltip: {
+      backgroundColor: '#242836', titleColor: '#e4e6f0', bodyColor: '#8b8fa7',
+      borderColor: '#2e3345', borderWidth: 1, cornerRadius: 8, padding: 10,
+    }
+  },
+  scales: {
+    x: { ticks: { color: '#8b8fa7', font: { size: 10 } }, grid: { color: 'rgba(46,51,69,.5)' } },
+    y: { ticks: { color: '#8b8fa7', font: { size: 10 } }, grid: { color: 'rgba(46,51,69,.5)' } }
+  }
+};
+
+function getMonthLabels(data) {
+  const map = {};
+  data.forEach(r => {
+    const d = parseDate(r.Date);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    if (!map[key]) map[key] = { free: 0, paid: 0, revenue: 0 };
+    if (isPaid(r)) { map[key].paid++; map[key].revenue += parsePrice(r['Total customer payment']); }
+    else map[key].free++;
+  });
+  const sorted = Object.keys(map).sort();
+  const labels = sorted.map(k => {
+    const [y, m] = k.split('-');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${months[parseInt(m)-1]} ${y.slice(2)}`;
+  });
+  return { labels, sorted, map };
+}
+
+function renderCharts(freeData, paidData) {
+  destroyCharts();
+
+  // 1. Pie
+  charts.pie = new Chart(document.getElementById('chartPie'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Free', 'Paid'],
+      datasets: [{
+        data: [freeData.length, paidData.length],
+        backgroundColor: [chartColors.green, chartColors.orange],
+        borderWidth: 0, hoverOffset: 8
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      cutout: '65%',
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#8b8fa7', padding: 16, usePointStyle: true } },
+        tooltip: defaultOptions.plugins.tooltip
+      }
+    }
+  });
+
+  const { labels, sorted, map } = getMonthLabels(filteredData);
+  const freeMonthly = sorted.map(k => map[k].free);
+  const paidMonthly = sorted.map(k => map[k].paid);
+  const revMonthly = sorted.map(k => map[k].revenue);
+
+  // 2. Trend
+  charts.trend = new Chart(document.getElementById('chartTrend'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Free', data: freeMonthly, borderColor: chartColors.green, backgroundColor: chartColors.greenBg, fill: true, tension: .4, pointRadius: 2, pointHoverRadius: 5 },
+        { label: 'Paid', data: paidMonthly, borderColor: chartColors.orange, backgroundColor: chartColors.orangeBg, fill: true, tension: .4, pointRadius: 2, pointHoverRadius: 5 }
+      ]
+    },
+    options: { ...defaultOptions, scales: { ...defaultOptions.scales, y: { ...defaultOptions.scales.y, beginAtZero: true } } }
+  });
+
+  // 3. Revenue
+  charts.revenue = new Chart(document.getElementById('chartRevenue'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Revenue ($)', data: revMonthly,
+        backgroundColor: chartColors.pinkBg, borderColor: chartColors.pink,
+        borderWidth: 1, borderRadius: 6
+      }]
+    },
+    options: { ...defaultOptions, scales: { ...defaultOptions.scales, y: { ...defaultOptions.scales.y, beginAtZero: true, ticks: { ...defaultOptions.scales.y.ticks, callback: v => '$' + v } } } }
+  });
+
+  // 4. Top Products
+  const productMap = {};
+  filteredData.forEach(r => {
+    const name = r['Product name'];
+    if (!productMap[name]) productMap[name] = 0;
+    productMap[name]++;
+  });
+  const topProducts = Object.entries(productMap).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const prodColors = topProducts.map((_, i) => {
+    const cols = [chartColors.green, chartColors.orange, chartColors.accent, chartColors.pink, chartColors.blue, chartColors.red, '#55efc4', '#fab1a0', '#81ecec', '#dfe6e9'];
+    return cols[i % cols.length];
+  });
+
+  charts.products = new Chart(document.getElementById('chartProducts'), {
+    type: 'bar',
+    data: {
+      labels: topProducts.map(p => p[0].length > 30 ? p[0].slice(0, 28) + '…' : p[0]),
+      datasets: [{
+        label: 'Downloads', data: topProducts.map(p => p[1]),
+        backgroundColor: prodColors.map(c => c + '33'), borderColor: prodColors,
+        borderWidth: 1, borderRadius: 6
+      }]
+    },
+    options: {
+      ...defaultOptions, indexAxis: 'y',
+      scales: {
+        x: { ...defaultOptions.scales.x, beginAtZero: true },
+        y: { ...defaultOptions.scales.y, ticks: { ...defaultOptions.scales.y.ticks, font: { size: 9 } } }
+      },
+      plugins: { ...defaultOptions.plugins, legend: { display: false } }
+    }
+  });
+
+  // 5. Stacked
+  charts.stacked = new Chart(document.getElementById('chartStacked'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Free', data: freeMonthly, backgroundColor: chartColors.green, borderRadius: 4 },
+        { label: 'Paid', data: paidMonthly, backgroundColor: chartColors.orange, borderRadius: 4 }
+      ]
+    },
+    options: {
+      ...defaultOptions,
+      scales: {
+        x: { ...defaultOptions.scales.x, stacked: true },
+        y: { ...defaultOptions.scales.y, stacked: true, beginAtZero: true }
+      }
+    }
+  });
+
+  // 6. Locale
+  const localeMap = {};
+  filteredData.forEach(r => {
+    const loc = r['Locale'] || 'Unknown';
+    localeMap[loc] = (localeMap[loc] || 0) + 1;
+  });
+  const localeEntries = Object.entries(localeMap).sort((a, b) => b[1] - a[1]);
+  const localeColors = localeEntries.map((_, i) => {
+    const cols = [chartColors.accent, chartColors.green, chartColors.orange, chartColors.pink, chartColors.blue, chartColors.red];
+    return cols[i % cols.length];
+  });
+
+  charts.locale = new Chart(document.getElementById('chartLocale'), {
+    type: 'doughnut',
+    data: {
+      labels: localeEntries.map(l => l[0]),
+      datasets: [{
+        data: localeEntries.map(l => l[1]),
+        backgroundColor: localeColors, borderWidth: 0, hoverOffset: 8
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true, cutout: '55%',
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#8b8fa7', padding: 12, usePointStyle: true } },
+        tooltip: defaultOptions.plugins.tooltip
+      }
+    }
+  });
+}
+
+// ── TABLE ──
+function renderTable() {
+  const productMap = {};
+  filteredData.forEach(r => {
+    const name = r['Product name'];
+    if (!productMap[name]) productMap[name] = { downloads: 0, revenue: 0, net: 0, paid: false };
+    productMap[name].downloads++;
+    productMap[name].revenue += parsePrice(r['Total customer payment']);
+    productMap[name].net += parsePrice(r['Seller transfer amount']);
+    if (isPaid(r)) productMap[name].paid = true;
+  });
+
+  const rows = Object.entries(productMap).sort((a, b) => b[1].downloads - a[1].downloads);
+  const tbody = document.getElementById('productTableBody');
+  tbody.innerHTML = rows.map(([name, d]) => `
+    <tr>
+      <td style="font-weight:600;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${name}">${name}</td>
+      <td><span class="badge ${d.paid ? 'badge-paid' : 'badge-free'}">${d.paid ? '💰 Paid' : '🆓 Free'}</span></td>
+      <td>${d.downloads.toLocaleString()}</td>
+      <td style="color:${d.revenue > 0 ? 'var(--orange)' : 'var(--text2)'}">$${d.revenue.toFixed(2)}</td>
+      <td style="color:${d.net > 0 ? 'var(--green)' : 'var(--text2)'}">$${d.net.toFixed(2)}</td>
+    </tr>
+  `).join('');
+}
+
+// ── EXPORT LEAD GEN CSV ──
+function exportLeadGenCSV() {
+  if (!rawData || rawData.length === 0) {
+    alert("Please upload your Notion Market CSV data first.");
+    return;
+  }
+
+  const csvRows = [];
+  csvRows.push('"Email Address","Date","Product Name","Locale"');
+
+  const uniqueLeads = new Map();
+  
+  rawData.forEach(row => {
+    const email = (row['Customer email'] || row['Customer Email'] || '').trim();
+    
+    if (email && !uniqueLeads.has(email.toLowerCase())) {
+      uniqueLeads.set(email.toLowerCase(), {
+        email: email,
+        date: row['Date'] || '',
+        product: row['Product name'] || row['Product Name'] || '',
+        locale: row['Locale'] || ''
+      });
+    }
+  });
+
+  if (uniqueLeads.size === 0) {
+    alert("No customer emails found in the uploaded data.");
+    return;
+  }
+
+  const escapeCSV = (text) => `"${String(text || '').replace(/"/g, '""')}"`;
+  
+  uniqueLeads.forEach(lead => {
+    const row = [
+      escapeCSV(lead.email),
+      escapeCSV(lead.date),
+      escapeCSV(lead.product),
+      escapeCSV(lead.locale)
+    ];
+    csvRows.push(row.join(','));
+  });
+
+  const csvString = csvRows.join('\n');
+  const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  
+  link.setAttribute('href', url);
+  link.setAttribute('download', 'lead_generation_export.csv');
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  // Clean up memory
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
