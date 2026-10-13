@@ -4,6 +4,8 @@ A single-file, offline-capable web dashboard for analyzing your Notion Market sa
 CSV exports. Upload a CSV (or load sample data) and get KPIs, charts, and a product
 breakdown instantly. No build step, no backend, no account required.
 
+**Live site:** https://notioncrm.pages.dev/
+
 ## Features
 
 - KPI cards: total downloads, free vs paid, revenue, net earnings, unique customers,
@@ -12,7 +14,7 @@ breakdown instantly. No build step, no backend, no account required.
   stacked free/paid breakdown, and locale distribution.
 - Product breakdown table with search, click-to-sort columns, and Mixed (free + paid) badges.
 - Filters: year, month, product type (free/paid), locale, and order status
-  (completed, all, refunded/cancelled).
+  (exclude refunds, all, refunded/cancelled).
 - Lead export: download a deduplicated customer list (email, first/last seen, downloads,
   products, locale) that respects the active filters.
 - Local persistence: uploaded data is saved in the browser and restored on reload.
@@ -21,7 +23,9 @@ breakdown instantly. No build step, no backend, no account required.
 
 ## Getting Started
 
-Open `index.html` directly in a browser, or serve it locally:
+The hosted version is available at https://notioncrm.pages.dev/ — just open it in a browser.
+
+To run it locally, open `index.html` directly in a browser, or serve it locally:
 
 ```bash
 python3 -m http.server 8000
@@ -54,7 +58,7 @@ Notion Market exports work as-is. Rows missing `Date` or `Product name` are skip
 
 - A row is **paid** when the listing price or total customer payment is greater than zero.
 - A row is **refunded** when its status contains refund, cancel, fail, or void. Refunded
-  rows are excluded by default (Status = Completed Only).
+  rows are excluded by default (Status = Exclude Refunds).
 - **Revenue** sums total customer payment; **Net earnings** sums seller transfer amount.
 - **Conversion rate** is paid orders divided by total orders.
 
