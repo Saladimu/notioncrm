@@ -62,9 +62,73 @@ Notion Market exports work as-is. Rows missing `Date` or `Product name` are skip
 - **Revenue** sums total customer payment; **Net earnings** sums seller transfer amount.
 - **Conversion rate** is paid orders divided by total orders.
 
+## AI Assistant
+
+The **Ask AI** button answers natural-language questions about the data in the current
+filters (top products, best month, conversion ideas, summaries). Answers are generated
+from aggregated statistics only — customer emails are never included in the request.
+
+The AI is served by a Cloudflare Pages Function at `functions/api/ai.js` (`POST /api/ai`),
+so the API key stays on the server and is never sent to the browser.
+
+### Setup
+
+1. Set these environment variables in the Cloudflare Pages project
+   (Settings -> Environment variables) for both Production and Preview:
+
+   - `USER_LLM_API_KEY` — your own LLM API key
+   - `USER_LLM_BASE_URL` — e.g. `https://api.openai.com/v1`
+   - `USER_LLM_MODEL` — e.g. `gpt-4o-mini`
+   - `ALLOWED_ORIGINS` — comma-separated origins (defaults include `notioncrm.pages.dev`)
+
+2. Redeploy. Cloudflare picks up the function from the `functions/` directory automatically.
+
+### Local development
+
+Pages Functions do not run under a plain static server. A simple preview such as
+`python3 -m http.server 8000` cannot serve `POST /api/ai`, so the **Ask AI** panel will
+report that the endpoint is unavailable there. Use Wrangler for local AI testing:
+
+```bash
+cp .env.example .dev.vars
+npx wrangler pages dev .
+```
+
+Then open the URL Wrangler prints (usually http://localhost:8788). Wrangler reads
+`.dev.vars` automatically; `.env` and `.dev.vars` are git-ignored.
+
+For production, deploy through Cloudflare Pages. The function in `functions/` is detected
+automatically, and the variables must be set in the Pages project (not in a committed file).
+
+### AI notes
+
+- `USER_LLM_API_KEY` is read only on the server via `env`; client code never reads it and
+  the key is never sent to the browser.
+- Only aggregated statistics (totals, top products, monthly trends, locales) are sent to the
+  model. Customer emails and other personal data are excluded.
+- `ALLOWED_ORIGINS` restricts which browser origins may call the endpoint. This is a basic
+  safeguard, not authentication.
+- There is no built-in rate limiting or usage quota. Add a Cloudflare rate-limiting or WAF
+  rule before making the endpoint publicly reachable, otherwise a third party could consume
+  your LLM quota.
+- The request context is capped at ~12 KB and the question at 500 characters.
+- The endpoint returns generic errors and does not echo upstream responses, so provider
+  details and credentials are not exposed to the client.
+
+### Troubleshooting
+
+- **"AI endpoint not available"** — you are on a static server; deploy to Pages or run
+  `npx wrangler pages dev .`.
+- **"AI is not configured on the server"** — `USER_LLM_API_KEY` is missing from the Pages
+  environment (set it for both Production and Preview, then redeploy).
+- **"Origin not allowed"** — add your site origin to `ALLOWED_ORIGINS`.
+- **"AI provider error (401/403)"** — the key is invalid or lacks access to the chosen model.
+- **"AI provider error (429)"** — rate limit or quota reached at the provider.
+
 ## Notes
 
-- All processing happens in the browser. Your CSV and customer emails never leave the device.
+- All processing happens in the browser. Your CSV and customer emails never leave the device;
+  the AI feature sends only aggregated statistics (no emails).
 - Data is stored in `localStorage` under the key `nm_dashboard_data_v1`. Use
   **Clear Saved Data** in Settings to remove it.
 - Because emails are persisted locally, avoid using this on a shared or public computer.
@@ -72,10 +136,13 @@ Notion Market exports work as-is. Rows missing `Date` or `Product name` are skip
 ## Project Structure
 
 ```
-index.html       The entire application (markup, styles, and logic)
-sample-data.csv  Bundled sample export used by the Sample Data button
-icon.png         Favicon and app icon
-README.md        This file
+index.html           The entire application (markup, styles, and logic)
+sample-data.csv      Bundled sample export used by the Sample Data button
+icon.png             Favicon and app icon
+functions/api/ai.js  Cloudflare Pages Function (server-side AI proxy)
+.env.example         Placeholder env vars for the AI function
+wrangler.toml        Optional local dev config for Pages Functions
+README.md            This file
 ```
 
 The Sample Data button fetches `sample-data.csv` from the same directory, so the page

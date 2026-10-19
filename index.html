@@ -241,6 +241,26 @@
     color:var(--accent2); font-size:.75rem;
   }
 
+  /* AI PANEL */
+  .ai-modal { max-width: 640px; }
+  .ai-suggestions { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+  .ai-chip { padding:6px 10px; font-size:.78rem; }
+  .ai-input {
+    width:100%; resize:vertical; min-height:72px;
+    padding:12px 14px; border-radius:10px; border:1px solid var(--border);
+    background:var(--surface2); color:var(--text); font:inherit; font-size:.9rem;
+    outline:none; margin-bottom:14px;
+  }
+  .ai-input:focus { border-color: var(--accent); }
+  .ai-answer {
+    background:var(--surface2); border:1px solid var(--border); border-radius:10px;
+    padding:14px 16px; font-size:.88rem; line-height:1.6; color:var(--text);
+    max-height:300px; overflow-y:auto; margin-bottom:16px; white-space:pre-wrap;
+  }
+  .ai-answer.error { color: var(--red); border-color: rgba(255,118,117,.4); }
+  .ai-muted { color:var(--text2); font-size:.78rem; margin-bottom:14px; }
+  .ai-modal .modal-actions { margin-top:4px; }
+
   /* RESPONSIVE */
   @media (max-width: 768px) {
     .navbar { padding: 10px 16px; }
@@ -275,6 +295,7 @@
     <h1>Notion Market <span>Dashboard</span></h1>
   </div>
   <div class="nav-actions">
+    <button class="btn" onclick="openAi()">Ask AI</button>
     <button class="btn" onclick="openSettings()">⚙️ <span class="hide-mobile">Settings</span></button>
     <button class="btn" onclick="exportLeadGenCSV()" style="background: var(--green); color: #0f1117; border-color: var(--green); font-weight: 600;">
       📥 <span class="hide-mobile">Export Lead CSV</span>
@@ -468,6 +489,27 @@
       <button class="btn" onclick="loadSampleData()">Sample Data</button>
       <button class="btn" onclick="clearSavedData()">Clear Saved Data</button>
       <button class="btn" onclick="closeSettings()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- AI PANEL -->
+<div class="overlay" id="aiOverlay" onclick="closeAiOutside(event)">
+  <div class="modal ai-modal">
+    <h2>Ask AI</h2>
+    <p>Ask questions about the data in the current filters. Answers use aggregated stats only; customer emails are never sent.</p>
+    <div class="ai-suggestions">
+      <button class="btn ai-chip" onclick="askAi('Which product has the most downloads?')">Top product</button>
+      <button class="btn ai-chip" onclick="askAi('Which month had the highest revenue?')">Top month</button>
+      <button class="btn ai-chip" onclick="askAi('How can I improve conversion from free to paid?')">Improve conversion</button>
+      <button class="btn ai-chip" onclick="askAi('Summarize the current performance in three bullets.')">Summarize</button>
+    </div>
+    <textarea class="ai-input" id="aiQuestion" rows="3" maxlength="500" placeholder="e.g. Which locale drives the most paid downloads?"></textarea>
+    <div class="ai-answer" id="aiAnswer" hidden></div>
+    <div class="ai-muted">Requires the Cloudflare Pages Function and a configured LLM key.</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeAi()">Close</button>
+      <button class="btn btn-accent" id="aiAskBtn" onclick="askAi()">Ask</button>
     </div>
   </div>
 </div>
@@ -1013,6 +1055,106 @@ function loadSampleData() {
     });
 }
 
+// ── AI ASSISTANT ──
+let aiBusy = false;
+
+function buildAiContext() {
+  const data = filteredData;
+  const paid = data.filter(isPaid);
+  const free = data.filter(r => !isPaid(r));
+  const revenue = paid.reduce((s, r) => s + parsePrice(getField(r, 'total customer payment')), 0);
+  const net = paid.reduce((s, r) => s + parsePrice(getField(r, 'seller transfer amount')), 0);
+  const uniqueCustomers = new Set(data.map(r => getField(r, 'customer email').toLowerCase()).filter(Boolean)).size;
+
+  const productMap = {};
+  data.forEach(r => {
+    const name = getField(r, 'product name') || 'Unknown';
+    if (!productMap[name]) productMap[name] = { downloads: 0, paid: 0, revenue: 0 };
+    productMap[name].downloads++;
+    if (isPaid(r)) productMap[name].paid++;
+    productMap[name].revenue += parsePrice(getField(r, 'total customer payment'));
+  });
+  const topProducts = Object.entries(productMap).sort((a, b) => b[1].downloads - a[1].downloads).slice(0, 10);
+
+  const { sorted, map } = getMonthLabels(data);
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const months = sorted.slice(-12).map(k => {
+    const [y, m] = k.split('-');
+    return `${monthNames[parseInt(m) - 1]} ${y}: ${map[k].free + map[k].paid} downloads, ${map[k].revenue.toFixed(2)} revenue`;
+  });
+
+  const localeMap = {};
+  data.forEach(r => {
+    const loc = getField(r, 'locale') || 'Unknown';
+    localeMap[loc] = (localeMap[loc] || 0) + 1;
+  });
+  const locales = Object.entries(localeMap).sort((a, b) => b[1] - a[1]).slice(0, 8)
+    .map(([l, c]) => `${l}: ${c}`).join(', ');
+
+  return [
+    `Orders in selection: ${data.length}`,
+    `Free downloads: ${free.length}`,
+    `Paid downloads: ${paid.length}`,
+    `Revenue: ${revenue.toFixed(2)}`,
+    `Net earnings: ${net.toFixed(2)}`,
+    `Unique customers: ${uniqueCustomers}`,
+    `Average order value: ${paid.length ? (revenue / paid.length).toFixed(2) : '0'}`,
+    'Top products (downloads / paid / revenue):',
+    ...topProducts.map(([n, v]) => `- ${n}: ${v.downloads} / ${v.paid} / ${v.revenue.toFixed(2)}`),
+    'Monthly totals (last 12):',
+    ...months.map(m => `- ${m}`),
+    `Locales: ${locales || 'none'}`
+  ].join('\n').slice(0, 12000);
+}
+
+function openAi() {
+  if (!rawData.length) { alert('Upload data or load the sample first.'); return; }
+  document.getElementById('aiOverlay').classList.add('open');
+  document.getElementById('aiQuestion').focus();
+}
+function closeAi() { document.getElementById('aiOverlay').classList.remove('open'); }
+function closeAiOutside(e) { if (e.target === e.currentTarget) closeAi(); }
+
+async function askAi(preset) {
+  if (aiBusy) return;
+  const qEl = document.getElementById('aiQuestion');
+  if (typeof preset === 'string') qEl.value = preset;
+  const question = qEl.value.trim();
+  if (!question) { qEl.focus(); return; }
+  if (!filteredData.length) { alert('No data in the current selection.'); return; }
+
+  const btn = document.getElementById('aiAskBtn');
+  const out = document.getElementById('aiAnswer');
+  aiBusy = true;
+  btn.disabled = true;
+  btn.textContent = 'Thinking…';
+  out.hidden = false;
+  out.classList.remove('error');
+  out.textContent = 'Thinking…';
+
+  try {
+    const res = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, context: buildAiContext() })
+    });
+    const type = res.headers.get('content-type') || '';
+    if (!type.includes('application/json')) {
+      throw new Error('AI endpoint not available. Deploy the Pages Function or run "wrangler pages dev ." locally.');
+    }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+    out.textContent = data.answer || 'No answer returned.';
+  } catch (e) {
+    out.classList.add('error');
+    out.textContent = e.message;
+  } finally {
+    aiBusy = false;
+    btn.disabled = false;
+    btn.textContent = 'Ask';
+  }
+}
+
 // ── INITIAL LOAD ──
 function restoreSavedData() {
   try {
@@ -1031,7 +1173,7 @@ function restoreSavedData() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeSettings();
+  if (e.key === 'Escape') { closeSettings(); closeAi(); }
 });
 
 restoreSavedData();
